@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""
+Script to automatically generate GitHub Classroom workflow test steps from GoogleTest test names.
+This script parses C++ test files and generates YAML workflow steps for each individual test.
+"""
+
+import re
+import sys
+import os
+from pathlib import Path
+
+def extract_test_names(cpp_file_path):
+    """Extract TEST and TEST_F names from a C++ GoogleTest file."""
+    test_names = []
+
+    with open(cpp_file_path, 'r') as file:
+        content = file.read()
+
+    # Pattern to match TEST(TestSuite, TestName) or TEST_F(TestFixture, TestName)
+    test_pattern = r'TEST(?:_F)?\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)'
+    matches = re.findall(test_pattern, content)
+
+    for match in matches:
+        test_suite, test_name = match
+        test_names.append(f"{test_suite}.{test_name}")
+
+    return test_names
+
+def generate_workflow_step(test_full_name, step_id, max_score=1):
+    """Generate a single workflow step for a test."""
+    # Convert test name to a readable format
+    test_display_name = test_full_name.replace('.', ' ').replace('Test', ' Test')
+    test_display_name = re.sub(r'([A-Z])', r' \1', test_display_name).strip()
+    test_display_name = ' '.join(test_display_name.split())  # Clean up extra spaces
+
+    return f"""    - name: {test_display_name}
+      id: {step_id}
+      uses: classroom-resources/autograding-command-grader@v1
+      with:
+        test-name: {test_display_name.replace(' ', '')}
+        command: ctest --test-dir build -R {test_full_name}
+        timeout: 10
+        max-score: {max_score}"""
+
+def generate_reporter_section(step_ids):
+    """Generate the autograding reporter section."""
+    env_vars = []
+    for step_id in step_ids:
+        env_var = f"{step_id.upper()}_RESULTS"
+        env_vars.append(f'        {env_var}: "${{{{steps.{step_id}.outputs.result}}}}"')
+
+    runners = ','.join(step_ids)
+
+    return f"""    - name: Autograding Reporter
+      uses: classroom-resources/autograding-grading-reporter@v1
+      env:
+{chr(10).join(env_vars)}
+      with:
+        runners: {runners}"""
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: python3 generate_workflow_tests.py <test_file.cpp> [test_file2.cpp ...]")
+        print("Example: python3 generate_workflow_tests.py tests/deck_tests.cpp tests/card_tests.cpp")
+        sys.exit(1)
+
+    all_test_names = []
+    all_step_ids = []
+
+    print("# Generated GitHub Classroom Workflow Test Steps")
+    print("# Copy these steps into your .github/workflows/classroom.yml file")
+    print()
+
+    for cpp_file in sys.argv[1:]:
+        if not os.path.exists(cpp_file):
+            print(f"Error: File {cpp_file} not found", file=sys.stderr)
+            continue
+
+        test_names = extract_test_names(cpp_file)
+        print(f"# Tests from {cpp_file}:")
+
+        for test_name in test_names:
+            # Generate a kebab-case step ID
+            step_id = test_name.lower().replace('.', '-').replace('_', '-')
+            step_id = re.sub(r'([a-z])([A-Z])', r'\1-\2', step_id).lower()
+
+            all_step_ids.append(step_id)
+            print(generate_workflow_step(test_name, step_id))
+
+        print()
+
+    print("# Autograding Reporter (replace the existing one):")
+    print(generate_reporter_section(all_step_ids))
+
+if __name__ == "__main__":
+    main()
