@@ -1,0 +1,21 @@
+#! /usr/bin/env python3
+import csv
+import os
+import shutil
+
+# This script reads in the student.csv and then reformats folders with the matching text from the first column of the csv and renames it to the name from the second column of the csv
+
+# Read in the csv
+with open('/home/michael-nutt/bin/students.csv', 'r') as file:
+    reader = csv.reader(file)
+    student_list = list(reader)
+
+# Loop through folders with unknown amount of text before the student name[0] and rename the entire folder to student_name[1]
+# Needs to walk over the folders where the script is called
+for student in student_list:
+    for root, dirs, files in os.walk(os.getcwd()):
+        for dir in dirs:
+            if student[0] in dir:
+                os.rename(os.path.join(root, dir), os.path.join(root, student[1].lower()))
+            elif "michaelnutt2" in dir:
+                shutil.rmtree(os.path.join(root, dir))
